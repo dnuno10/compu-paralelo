@@ -1,135 +1,79 @@
-#include <memory>
-#include <string>
-#include <string_view>
-#include <thread>
 #include <iostream>
-#include <print>
-#include <mutex>
-#include <condition_variable>
-#include <chrono>
-#include <random>
+#include <thread>
 #include <vector>
+#include <random>
 #include <algorithm>
+#include <mutex>
 
-struct ThreadResult {
-    int threadId;
-    int totalSum;
-    std::vector<int> numbers;
-    std::mutex resultMutex;
-    
-    ThreadResult(int id) : threadId(id), totalSum(0) {}
-    
-    void addNumber(int number) {
-        std::lock_guard<std::mutex> lock(resultMutex);
-        numbers.push_back(number);
-        totalSum += number;
-    }
-    
-    void printResult() const {
-        std::println("Thread {} - Total Sum: {}", threadId, totalSum);
-        std::print("Numbers: ");
-        for (size_t i = 0; i < numbers.size(); ++i) {
-            std::print("{}", numbers[i]);
-            if (i < numbers.size() - 1) std::print(", ");
-        }
-        std::println("");
-    }
-};
+// Crear un programa que ejecute 10 threads, cada uno sumará 100 números aleatorios entre 1 y 1000.
+// Mostrar el resultado de cada thread. Enunciar el thread con puntuación más alta.
 
-class NumberCalculator {
-private:
-    int threadId;
-    std::shared_ptr<ThreadResult> result;
-    std::random_device rd;
-    std::mt19937 gen;
-    std::uniform_int_distribution<int> dis;
-    
+class Thread
+{
+    int id_;
+    int total_ = 0;
+    std::mt19937 num_random;
+    std::uniform_int_distribution<int> rango_num{1, 1000};
+    mutable std::mutex mutex;
+
 public:
-    NumberCalculator(int id) : threadId(id), gen(rd()), dis(1, 1000) {
-        result = std::make_shared<ThreadResult>(id);
-    }
-    
-    std::shared_ptr<ThreadResult> getResult() const {
-        return result;
-    }
-    
-    void calculate() {
-        std::println("Thread {} started calculating...", threadId);
-        
-        for (int i = 0; i < 100; ++i) {
-            int randomNumber = dis(gen);
-            result->addNumber(randomNumber);
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    explicit Thread(int id)
+        : id_(id), num_random(std::random_device{}()) {}
+
+    void run()
+    {
+        for (int i = 0; i < 100; ++i)
+        {
+            int val = rango_num(num_random);
+            std::lock_guard<std::mutex> lg(mutex);
+            total_ += val;
         }
-        
-        std::println("Thread {} finished calculating. Total: {}", threadId, result->totalSum);
+    }
+
+    int id() const { return id_; }
+
+    int total() const
+    {
+        std::lock_guard<std::mutex> lg(mutex);
+        return total_;
+    }
+
+    void print() const
+    {
+        std::lock_guard<std::mutex> lg(mutex);
+        std::cout << "thread " << id_ << " - total sum: " << total_ << '\n';
     }
 };
 
-class ResultManager {
-private:
-    std::vector<std::shared_ptr<ThreadResult>> results;
-    std::mutex resultsMutex;
-    
-public:
-    void addResult(std::shared_ptr<ThreadResult> result) {
-        std::lock_guard<std::mutex> lock(resultsMutex);
-        results.push_back(result);
-    }
-    
-    void printAllResults() {
-        std::println("\n=== RESULTS FROM ALL THREADS ===");
-        for (const auto& result : results) {
-            result->printResult();
-        }
-    }
-    
-    std::shared_ptr<ThreadResult> findHighestScore() {
-        if (results.empty()) return nullptr;
-        
-        auto maxResult = std::max_element(results.begin(), results.end(),
-            [](const std::shared_ptr<ThreadResult>& a, const std::shared_ptr<ThreadResult>& b) {
-                return a->totalSum < b->totalSum;
-            });
-        
-        return *maxResult;
-    }
-    
-    void announceWinner() {
-        auto winner = findHighestScore();
-        if (winner) {
-            std::println("\nWINNER: Thread {} with highest score: {}", 
-                        winner->threadId, winner->totalSum);
-        }
-    }
-};
-
-int main() {
+int main()
+{
     const int NUM_THREADS = 10;
-    std::vector<std::unique_ptr<NumberCalculator>> calculators;
+
+    std::vector<Thread> processors;
+    processors.reserve(NUM_THREADS);
+    for (int i = 1; i <= NUM_THREADS; ++i)
+        processors.emplace_back(i);
+
     std::vector<std::thread> threads;
-    ResultManager manager;
-    
-    std::println("Starting {} threads to calculate random number sums...\n", NUM_THREADS);
-    
-    for (int i = 1; i <= NUM_THREADS; ++i) {
-        calculators.push_back(std::make_unique<NumberCalculator>(i));
+    threads.reserve(NUM_THREADS);
+    for (auto &w : processors)
+    {
+        threads.emplace_back(&Thread::run, &w);
     }
-    
-    for (auto& calc : calculators) {
-        threads.emplace_back([&calc, &manager]() {
-            calc->calculate();
-            manager.addResult(calc->getResult());
-        });
-    }
-        for (auto& t : threads) {
+    for (auto &t : threads)
         t.join();
-    }
-    
-    std::println("\nAll threads completed!");
-        manager.printAllResults();
-    manager.announceWinner();
-    
+
+    std::cout << "results from all threads\n";
+    for (const auto &w : processors)
+        w.print();
+
+    auto it = std::max_element(
+        processors.begin(), processors.end(),
+        [](const Thread &a, const Thread &b)
+        { return a.total() < b.total(); });
+
+    std::cout << "\nwinner: Thread " << it->id()
+              << " with highest score: " << it->total() << '\n';
+
     return 0;
 }
