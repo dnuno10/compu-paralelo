@@ -1,50 +1,34 @@
 #include <memory>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <iostream>
-#include <print>
 #include <mutex>
 #include <condition_variable>
-#include <chrono>
 
 struct Fork
 {
-    bool isTaken = false;
-    std::string philosopher;
-    std::mutex forkMutex;
+    bool occupied = false;
+    std::mutex mutex;
     std::condition_variable taken;
 
-    void takeFork(std::string_view philosopherName, std::string_view hand)
-    {
-        std::unique_lock<std::mutex> lock(forkMutex);
-        std::cout << philosopherName << " is waiting for " << hand << " hand fork\n";
-        taken.wait(lock, [&]
-                   { return !isTaken; });
-        isTaken = true;
-        philosopher = std::string(philosopherName);
-        std::cout << philosopher << " is taking " << hand << " hand fork\n";
-    }
-
-    bool tryTake(std::string_view philosopherName, std::string_view hand)
-    {
-        std::unique_lock<std::mutex> lock(forkMutex);
-        if (isTaken)
-            return false;
-        isTaken = true;
-        philosopher = std::string(philosopherName);
-        std::cout << philosopher << " is taking " << hand << " hand fork (try)\n";
-        return true;
-    }
-
-    void releaseFork(std::string_view hand)
+    void pickup(std::string_view philosopherName, std::string_view hand)
     {
         {
-            std::lock_guard<std::mutex> lock(forkMutex);
-            std::cout << philosopher << " is releasing " << hand << " hand fork\n";
-            isTaken = false;
-            philosopher.clear();
+            std::unique_lock lock(mutex);
+            taken.wait(lock, [&]
+                       {
+            std::cout << philosopherName << " is waiting for " << hand << " hand fork" << std::endl;
+            return !occupied; });
+            std::cout << philosopherName << " is taking " << hand << " hand fork" << std::endl;
+
+            occupied = true;
         }
+    }
+
+    void layDown(std::string_view philosopherName, std::string_view hand)
+    {
+        std::cout << philosopherName << " is releasing " << hand << " hand fork" << std::endl;
+        occupied = false;
         taken.notify_all();
     }
 };
@@ -53,29 +37,26 @@ class Philosopher
 {
 private:
     std::string name;
-    std::shared_ptr<Philosopher> rightPhilosopher = nullptr;
-    std::shared_ptr<Fork> leftFork;
+
     std::shared_ptr<Fork> rightFork;
+    std::shared_ptr<Fork> leftFork;
 
 public:
     Philosopher(std::string name) : name(name) {}
 
-    // get
     std::shared_ptr<Fork> RightFork() const
     {
         return rightFork;
     }
-    // set
     std::shared_ptr<Fork> &RightFork()
     {
         return rightFork;
     }
-    // get
+
     std::shared_ptr<Fork> LeftFork() const
     {
         return leftFork;
     }
-    // set
     std::shared_ptr<Fork> &LeftFork()
     {
         return leftFork;
@@ -85,20 +66,22 @@ public:
     {
         while (true)
         {
-            leftFork->takeFork(name, "left");
-
-            if (!rightFork->tryTake(name, "right"))
+            leftFork->pickup(name, "left");
+            if (rightFork->occupied)
             {
-                leftFork->releaseFork("left");
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                leftFork->layDown(name, "left");
                 continue;
             }
+            rightFork->pickup(name, "right");
 
-            std::cout << name << " started eating\n";
+            // Simulating the Philosopher eating
+            std::cout << name << " started eating" << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::cout << name << " is done eating" << std::endl;
 
-            rightFork->releaseFork("right");
-            leftFork->releaseFork("left");
+            leftFork->layDown(name, "left");
+
+            rightFork->layDown(name, "right");
         }
     }
 };
@@ -107,19 +90,48 @@ int main()
 {
     std::shared_ptr<Fork> fork1 = std::make_shared<Fork>();
     std::shared_ptr<Fork> fork2 = std::make_shared<Fork>();
+    std::shared_ptr<Fork> fork3 = std::make_shared<Fork>();
+    std::shared_ptr<Fork> fork4 = std::make_shared<Fork>();
+    std::shared_ptr<Fork> fork5 = std::make_shared<Fork>();
 
     Philosopher socrates("Socrates");
-    Philosopher plato("Plato");
-    socrates.RightFork() = fork2;
     socrates.LeftFork() = fork1;
-    plato.RightFork() = fork1;
-    plato.LeftFork() = fork2;
+    socrates.RightFork() = fork2;
+
+    Philosopher diogenes("Diogenes");
+    diogenes.LeftFork() = fork2;
+    diogenes.RightFork() = fork3;
+
+    Philosopher platon("Platon");
+    platon.LeftFork() = fork3;
+    platon.RightFork() = fork4;
+
+    // Cambié Phytagoras por Aristotle
+    Philosopher aristotle("Aristotle");
+    aristotle.LeftFork() = fork4;
+    aristotle.RightFork() = fork5;
+
+    // Cambié Zeno por Epicurus
+    Philosopher epicurus("Epicurus");
+    epicurus.LeftFork() = fork5;
+    epicurus.RightFork() = fork1;
 
     std::thread threadSocrates([&]()
                                { socrates.eat(); });
-    std::thread threadPlato([&]()
-                            { plato.eat(); });
+    std::thread threadDiogenes([&]()
+                               { diogenes.eat(); });
+    std::thread threadPlaton([&]()
+                             { platon.eat(); });
+    std::thread threadAristotle([&]()
+                                { aristotle.eat(); });
+    std::thread threadEpicurus([&]()
+                               { epicurus.eat(); });
+
     threadSocrates.join();
-    threadPlato.join();
+    threadDiogenes.join();
+    threadPlaton.join();
+    threadAristotle.join();
+    threadEpicurus.join();
+
     return 0;
 }
