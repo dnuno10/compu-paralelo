@@ -3,44 +3,34 @@
 #include <vector>
 #include <random>
 #include <algorithm>
-#include <mutex>
 
-// Crear un programa que ejecute 10 threads, cada uno sumará 100 números aleatorios entre 1 y 1000.
-// Mostrar el resultado de cada thread. Enunciar el thread con puntuación más alta.
+// Ejecuta 10 threads, cada uno suma 100 números aleatorios entre 1 y 1000.
+// Muestra el resultado de cada thread y el de mayor puntuación.
 
 class Thread
 {
     int id_;
     int total_ = 0;
-    std::mt19937 num_random;
-    std::uniform_int_distribution<int> rango_num{1, 1000};
-    mutable std::mutex mutex;
+    std::mt19937 rng;
+    std::uniform_int_distribution<int> dist{1, 1000};
 
 public:
     explicit Thread(int id)
-        : id_(id), num_random(std::random_device{}()) {}
+        : id_(id), rng(std::random_device{}()) {}
 
     void run()
     {
         for (int i = 0; i < 100; ++i)
         {
-            int val = rango_num(num_random);
-            std::lock_guard<std::mutex> lg(mutex);
-            total_ += val;
+            total_ += dist(rng);
         }
     }
 
     int id() const { return id_; }
-
-    int total() const
-    {
-        std::lock_guard<std::mutex> lg(mutex);
-        return total_;
-    }
+    int total() const { return total_; }
 
     void print() const
     {
-        std::lock_guard<std::mutex> lg(mutex);
         std::cout << "thread " << id_ << " - total sum: " << total_ << '\n';
     }
 };
@@ -57,9 +47,8 @@ int main()
     std::vector<std::thread> threads;
     threads.reserve(NUM_THREADS);
     for (auto &w : processors)
-    {
         threads.emplace_back(&Thread::run, &w);
-    }
+
     for (auto &t : threads)
         t.join();
 
